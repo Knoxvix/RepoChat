@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RepoChat</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f6b5c">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1ec;--panel:#fff;--ink:#1c2a26;--mute:#6b7a74;--line:#dbe2dc;--acc:#0f6b5c;--accink:#fff;--mine:#0f6b5c;--err:#b3261e}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1614;--panel:#16221f;--ink:#e6efe9;--mute:#8aa098;--line:#26362f;--acc:#4fc3a9;--accink:#06231d;--mine:#1f7f6e;--err:#ff8a80}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:16px/1.45 "Instrument Sans",system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+button,input,select{font:inherit;color:inherit}button{cursor:pointer}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.app{height:100%;max-width:760px;margin:0 auto;display:flex;flex-direction:column;background:var(--panel);border:0 solid var(--line);border-width:0 1px}
+header{display:flex;align-items:center;gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));border-bottom:1px solid var(--line)}
+.grow{flex:1;min-width:0}
+select{width:100%;border:0;background:none;font-weight:600;font-size:17px}
+small{display:block;color:var(--mute);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mute);flex:none}.dot.ok{background:#2fb56f}.dot.bad{background:var(--err)}
+.ghost{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:14px;white-space:nowrap}
+.ghost:hover{border-color:var(--acc)}
+#log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:3px;background:var(--bg)}
+.day{align-self:center;color:var(--mute);font-size:12.5px;margin:10px 0 6px}
+.row{display:flex;flex-direction:column;align-items:flex-start;max-width:78%}
+.row.me{align-self:flex-end;align-items:flex-end}
+.b{padding:8px 12px;border-radius:16px;background:var(--panel);border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}
+.row.me .b{background:var(--mine);color:#fff;border-color:transparent}
+.b.pending{opacity:.6}.b.fail{outline:1px solid var(--err)}.b.lock{font-style:italic;color:var(--mute)}
+.t{font-size:11.5px;color:var(--mute);margin:2px 6px 8px}
+.empty{margin:auto;text-align:center;color:var(--mute);max-width:320px}
+form.send{display:flex;gap:8px;padding:10px 12px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+form.send input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:22px;padding:10px 16px}
+.send button{background:var(--acc);color:var(--accink);border:0;border-radius:22px;padding:0 20px;font-weight:600}
+.setup{height:100%;overflow:auto;display:grid;place-items:center;padding:20px}
+.card{width:100%;max-width:460px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
+.card h1{margin:0 0 4px;font-size:22px}.card p{color:var(--mute);margin:0 0 14px;font-size:14.5px}
+label{display:block;font-size:13.5px;font-weight:500;margin:12px 0 4px}label span{color:var(--mute);font-weight:400}
+.card input{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 11px}
+.go{margin-top:18px;width:100%;background:var(--acc);color:var(--accink);border:0;border-radius:8px;padding:11px;font-weight:600}
+.msg{color:var(--err);font-size:14px;min-height:20px;margin-top:10px}.hint{font-size:12.5px;color:var(--mute);margin-top:12px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="setup" id="setup">
+<form class="card" id="cfgForm" autocomplete="off">
+  <h1>RepoChat</h1>
+  <p>Log in with a username and password. Chats use the Signal protocol, with this site’s own GitHub repository as the only relay.</p>
+  <label>Username<input id="fName" required maxlength="24" autocomplete="username"></label>
+  <label>Password <span>10+ characters. It unlocks your keys and can’t be reset</span><input id="fPass" type="password" required autocomplete="current-password"></label>
+  <label>GitHub token <span>Only needed the first time on each device</span><input id="fToken" type="password" autocomplete="off"></label>
+  <button class="go" type="submit">Log in or sign up</button>
+  <div class="msg" id="setupMsg" role="alert"></div>
+  <div class="hint">A new username creates an account. Your keys are encrypted with your password before they are stored.</div>
+</form>
+</div>
+
+<div class="app" id="app" hidden>
+  <header>
+    <span class="dot" id="dot"></span>
+    <div class="grow"><select id="peer" aria-label="Conversation"></select><small id="status">Connecting</small></div>
+    <button class="ghost" id="newBtn" type="button">New chat</button>
+    <button class="ghost" id="setBtn" type="button">Log out</button>
+  </header>
+  <div id="log" aria-live="polite"></div>
+  <form class="send" id="sendForm" autocomplete="off">
+    <input id="text" placeholder="Write a message" maxlength="2000" aria-label="Message">
+    <button type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id), enc=new TextEncoder(), dec=new TextDecoder();
+const B=u=>{let t='';for(let i=0;i<u.length;i+=8192)t+=String.fromCharCode(...u.subarray(i,i+8192));return btoa(t)}, U=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const cat=(...a)=>{const o=new Uint8Array(a.reduce((s,x)=>s+x.length,0));let i=0;for(const x of a){o.set(x,i);i+=x.length}return o};
+const F=new Uint8Array(32).fill(255), Z=new Uint8Array(32);
+let cfg=null, D=null, cur=null, timer=null, busy=false;
+let etags={}, K=null, salt=null, pq=Promise.resolve();
+/* password layer: PBKDF2-HMAC-SHA256 (600k) -> AES-256-GCM, bound to the username */
+async function pkey(pass,sl){const m=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt:sl,iterations:600000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function lock(obj,name){const iv=crypto.getRandomValues(new Uint8Array(12));return {v:1,salt:B(salt),iv:B(iv),ct:B(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:enc.encode('rc3:'+name)},K,enc.encode(JSON.stringify(obj)))))}}
+async function unlock(b,name){return JSON.parse(dec.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:U(b.iv),additionalData:enc.encode('rc3:'+name)},K,U(b.ct))))}
+const persist=()=>{if(!K||!cfg)return;const snap=JSON.parse(JSON.stringify({cfg,D})),n=cfg.name;pq=pq.then(async()=>{try{localStorage.setItem('rc3:'+n,JSON.stringify(await lock(snap,n)))}catch(e){}})};
+
+/* ---------- primitives ---------- */
+async function hkdf(ikm,salt,info,bits){const k=await crypto.subtle.importKey('raw',ikm,'HKDF',false,['deriveBits']);return new Uint8Array(await crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256',salt,info:enc.encode(info)},k,bits))}
+async function gen(alg){const x=alg==='X25519',k=await crypto.subtle.generateKey({name:alg},true,x?['deriveBits']:['sign','verify']);const j=await crypto.subtle.exportKey('jwk',k.privateKey);return {priv:j,pub:j.x}}
+async function dh(priv,pub){const a=await crypto.subtle.importKey('jwk',priv,{name:'X25519'},false,['deriveBits']),b=await crypto.subtle.importKey('jwk',{kty:'OKP',crv:'X25519',x:pub},{name:'X25519'},false,[]);return new Uint8Array(await crypto.subtle.deriveBits({name:'X25519',public:b},a,256))}
+async function sign(priv,msg){const k=await crypto.subtle.importKey('jwk',priv,{name:'Ed25519'},false,['sign']);return B(new Uint8Array(await crypto.subtle.sign('Ed25519',k,enc.encode(msg))))}
+async function verify(x,sig,msg){const k=await crypto.subtle.importKey('jwk',{kty:'OKP',crv:'Ed25519',x},{name:'Ed25519'},false,['verify']);return crypto.subtle.verify('Ed25519',k,U(sig),enc.encode(msg))}
+async function kdfRK(rk,out){const o=await hkdf(out,rk,'RC-ratchet',512);return [o.slice(0,32),o.slice(32)]}
+async function kdfCK(ck){const k=await crypto.subtle.importKey('raw',ck,{name:'HMAC',hash:'SHA-256'},false,['sign']);const s=x=>crypto.subtle.sign('HMAC',k,new Uint8Array([x])).then(r=>new Uint8Array(r));return [await s(2),await s(1)]} // [next chain key, message key]
+async function seal(mk,pt,ad){const iv=crypto.getRandomValues(new Uint8Array(12)),k=await crypto.subtle.importKey('raw',mk,'AES-GCM',false,['encrypt']);return {iv:B(iv),ct:B(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:enc.encode(ad)},k,pt)))}}
+async function unseal(mk,m,ad){const k=await crypto.subtle.importKey('raw',mk,'AES-GCM',false,['decrypt']);return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:U(m.iv),additionalData:enc.encode(ad)},k,U(m.ct)))}
+
+/* ---------- X3DH (no one-time prekeys: a static repo can't hand them out atomically) ---------- */
+async function initiate(bun){
+  const ek=await gen('X25519');
+  const sk=await hkdf(cat(F,await dh(D.id.ik.priv,bun.spk),await dh(ek.priv,bun.ik),await dh(ek.priv,bun.spk)),Z,'RC-X3DH',256);
+  const dhs=await gen('X25519'),[rk,ck]=await kdfRK(sk,await dh(dhs.priv,bun.spk));
+  return {rk:B(rk),cks:B(ck),ckr:null,dhs,dhr:bun.spk,ns:0,nr:0,pn:0,skipped:{},ad:D.id.ik.pub+bun.ik,ek:ek.pub,init:{ik:D.id.ik.pub,ek:ek.pub}};
+}
+async function respond(init){
+  const sk=await hkdf(cat(F,await dh(D.id.spk.priv,init.ik),await dh(D.id.ik.priv,init.ek),await dh(D.id.spk.priv,init.ek)),Z,'RC-X3DH',256);
+  return {rk:B(sk),cks:null,ckr:null,dhs:D.id.spk,dhr:null,ns:0,nr:0,pn:0,skipped:{},ad:init.ik+D.id.ik.pub,ek:init.ek};
+}
+
+/* ---------- Double Ratchet ---------- */
+async function ratchetEnc(st,pt){
+  const [nc,mk]=await kdfCK(U(st.cks));st.cks=B(nc);
+  const h={dh:st.dhs.pub,pn:st.pn,n:st.ns};st.ns++;
+  return {h,...await seal(mk,pt,st.ad+JSON.stringify(h))};
+}
+async function skip(st,until){
+  if(!st.ckr)return;if(until-st.nr>100)throw new Error('too many skipped');
+  while(st.nr<until){const [nc,mk]=await kdfCK(U(st.ckr));st.ckr=B(nc);st.skipped[st.dhr+':'+st.nr]=B(mk);st.nr++}
+  const ks=Object.keys(st.skipped);ks.slice(0,Math.max(0,ks.length-100)).forEach(k=>delete st.skipped[k]);
+}
+async function dhStep(st,newDh){
+  st.pn=st.ns;st.ns=0;st.nr=0;st.dhr=newDh;
+  let [rk,ck]=await kdfRK(U(st.rk),await dh(st.dhs.priv,newDh));st.ckr=B(ck);
+  st.dhs=await gen('X25519');
+  [rk,ck]=await kdfRK(rk,await dh(st.dhs.priv,newDh));st.rk=B(rk);st.cks=B(ck);
+}
+async function ratchetDec(st,m){
+  const h=m.h,ad=st.ad+JSON.stringify(h),sk=h.dh+':'+h.n;
+  if(st.skipped[sk]){const mk=U(st.skipped[sk]);const pt=await unseal(mk,m,ad);delete st.skipped[sk];return pt}
+  if(h.dh!==st.dhr){await skip(st,h.pn);await dhStep(st,h.dh)}
+  await skip(st,h.n);
+  const [nc,mk]=await kdfCK(U(st.ckr));const pt=await unseal(mk,m,ad);st.ckr=B(nc);st.nr++;return pt;
+}
+
+/* ---------- GitHub relay ---------- */
+const url=p=>`https://api.github.com/repos/${cfg.repo}/contents/${p}`;
+const hdr=()=>({Authorization:'Bearer '+cfg.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'});
+async function ghGet(p,useEtag){
+  const h=hdr();if(useEtag&&etags[p])h['If-None-Match']=etags[p];
+  const r=await fetch(url(p)+(cfg.branch?'?ref='+encodeURIComponent(cfg.branch):''),{headers:h,cache:'no-store'});
+  if(r.status===304)return {same:true};
+  if(r.status===404)return {data:null,sha:null};
+  if(r.status===401||r.status===403)throw new Error('GitHub refused the token. It needs Contents read and write on this repository.');
+  if(!r.ok)throw new Error('GitHub error '+r.status);
+  etags[p]=r.headers.get('etag');const j=await r.json();
+  let data=null;try{data=JSON.parse(dec.decode(U(j.content.replace(/\n/g,''))))}catch(e){}
+  return {data,sha:j.sha};
+}
+async function ghPut(p,obj,sha){
+  const body={message:'sync',content:B(enc.encode(JSON.stringify(obj)))};if(sha)body.sha=sha;if(cfg.branch)body.branch=cfg.branch;
+  const r=await fetch(url(p),{method:'PUT',headers:{...hdr(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.status===409||r.status===422)return false;
+  if(r.status===404)throw new Error('Repository or branch not found. Create the branch first.');
+  if(r.status===401||r.status===403)throw new Error('GitHub refused the token. It needs Contents read and write on this repository.');
+  if(!r.ok)throw new Error('GitHub error '+r.status);
+  delete etags[p];return true;
+}
+async function append(p,entry){
+  for(let i=0;i<5;i++){
+    const c=await ghGet(p,false),l=(c.data&&c.data.m)||[];
+    if(l.some(e=>e.id===entry.id)||await ghPut(p,{v:1,m:[...l,entry].slice(-500)},c.sha))return;
+    await new Promise(r=>setTimeout(r,250+Math.random()*500));
+  }
+  throw new Error('Could not save after several tries. Try again.');
+}
+
+/* ---------- identity and trust ---------- */
+const REPO_OVERRIDE=''; // only for a custom domain or local testing, e.g. 'yourname/my-chat'
+const guessRepo=()=>{if(REPO_OVERRIDE)return REPO_OVERRIDE;const h=location.hostname;if(!h.endsWith('.github.io'))return '';const o=h.split('.')[0],r=location.pathname.split('/')[1];return o+'/'+(r||h)};
+async function ensureBranch(){ // chat data lives on its own branch so messages never rebuild the site
+  const base='https://api.github.com/repos/'+cfg.repo,h=hdr(),denied='GitHub refused the token. Create one for this repository with Contents read and write.';
+  const r=await fetch(base+'/branches/'+cfg.branch,{headers:h});
+  if(r.ok)return;
+  if(r.status===401||r.status===403)throw new Error(denied);
+  const rp=await fetch(base,{headers:h});
+  if(!rp.ok)throw new Error('Repository not found, or the token can’t reach it.');
+  const def=(await rp.json()).default_branch,rf=await fetch(base+'/git/ref/heads/'+def,{headers:h});
+  if(!rf.ok)throw new Error(denied);
+  const mk=await fetch(base+'/git/refs',{method:'POST',headers:{...h,'Content-Type':'application/json'},body:JSON.stringify({ref:'refs/heads/'+cfg.branch,sha:(await rf.json()).object.sha})});
+  if(!mk.ok&&mk.status!==422)throw new Error(denied);
+}
+async function login(name,pass,repo,branch,token){
+  const local=localStorage.getItem('rc3:'+name);
+  if(local){ // known device: password unlocks the stored keys, sessions and token
+    const b=JSON.parse(local);salt=U(b.salt);K=await pkey(pass,salt);
+    let st;try{st=await unlock(b,name)}catch(e){K=null;throw new Error('Wrong password.')}
+    cfg={...st.cfg};if(repo)cfg.repo=repo;if(branch)cfg.branch=branch;if(token)cfg.token=token;D=st.D;return false;
+  }
+  if(!repo||!token)throw new Error(repo?'Enter your GitHub token to sign up, or to log in on a new device.':'Open this app from your GitHub Pages address (yourname.github.io/repo).');
+  cfg={name,repo,branch,token};await ensureBranch();
+  const v=await ghGet('vault/'+name+'.json',false);
+  if(v.data){ // new device: restore identity from the encrypted vault
+    salt=U(v.data.salt);K=await pkey(pass,salt);
+    try{D={id:(await unlock(v.data,name)).id,peers:{}}}catch(e){K=null;D=null;throw new Error('Wrong password.')}
+    return true;
+  }
+  if((await ghGet('keys/'+name+'.json',false)).data)throw new Error('That username is already taken.');
+  if(pass.length<10)throw new Error('Choose a password of 10 or more characters.');
+  salt=crypto.getRandomValues(new Uint8Array(16));K=await pkey(pass,salt);
+  const ik=await gen('X25519'),sik=await gen('Ed25519'),spk=await gen('X25519');
+  D={id:{ik,sik,spk},peers:{}};
+  const sig=await sign(sik.priv,ik.pub+':'+spk.pub);
+  if(!await ghPut('keys/'+name+'.json',{ik:ik.pub,sik:sik.pub,spk:spk.pub,sig},null)||!await ghPut('vault/'+name+'.json',await lock({id:D.id},name),null))throw new Error('Could not create the account. Try again.');
+  return false;
+}
+async function fetchBundle(name,p){
+  const r=await ghGet('keys/'+name+'.json',false),b=r.data;
+  if(!b)throw new Error(name+' hasn’t registered yet.');
+  if(!await verify(b.sik,b.sig,b.ik+':'+b.spk))throw new Error('Bad signature on '+name+'’s keys.');
+  if(p.pin&&p.pin!==b.sik)throw new Error('The safety number for '+name+' changed. Don’t trust this chat until you check with them.');
+  p.pin=b.sik;p.ik=b.ik;return b;
+}
+async function safety(p){
+  if(!p||!p.ik)return '';
+  const h=await crypto.subtle.digest('SHA-256',enc.encode([D.id.ik.pub,p.ik].sort().join('|')));
+  return [...new Uint8Array(h)].slice(0,10).map(x=>x.toString(16).padStart(2,'0')).join('').match(/.{1,5}/g).join(' ');
+}
+
+/* ---------- messaging ---------- */
+const peerOf=n=>D.peers[n]||(D.peers[n]={hist:[],seen:[]});
+async function ingest(e){
+  const p=peerOf(e.from);p.seen.push(e.id);p.seen=p.seen.slice(-600);
+  try{
+    if(e.init&&(!p.st||p.st.ek!==e.init.ek)){
+      const b=await fetchBundle(e.from,p);
+      if(b.ik!==e.init.ik)throw new Error('identity mismatch');
+      p.st=await respond(e.init);
+    }
+    if(!p.st)throw new Error('no session');
+    const t=structuredClone(p.st),pt=JSON.parse(dec.decode(await ratchetDec(t,e)));
+    delete t.init;p.st=t;
+    p.hist.push({id:e.id,me:false,t:pt.t,ts:pt.ts,state:'ok'});
+  }catch(err){p.hist.push({id:e.id,me:false,t:'Couldn’t decrypt this message.',ts:Date.now(),lock:true,state:'ok'})}
+}
+async function sendMsg(to,text){
+  const p=peerOf(to),id=Date.now()+'-'+Math.random().toString(36).slice(2,7),item={id,me:true,t:text,ts:Date.now(),state:'pending'};
+  p.hist.push(item);render();
+  try{
+    if(!p.st)p.st=await initiate(await fetchBundle(to,p));
+    const o=await ratchetEnc(p.st,enc.encode(JSON.stringify({t:text,ts:item.ts})));
+    persist();
+    await append('inbox/'+to+'.json',{id,from:cfg.name,...o,...(p.st.init?{init:p.st.init}:{})});
+    item.state='ok';setStatus('Connected','ok');
+  }catch(err){item.state='fail';setStatus(err.message,'bad')}
+  persist();render();
+}
+async function poll(){
+  if(busy||document.hidden)return;busy=true;
+  try{
+    const r=await ghGet('inbox/'+cfg.name+'.json',true);
+    if(!r.same&&r.data){
+      for(const e of r.data.m||[]){if(!peerOf(e.from).seen.includes(e.id))await ingest(e)}
+      persist();fillPeers();render();
+    }
+    setStatus('Connected','ok');
+  }catch(err){setStatus(err.message,'bad')}
+  busy=false;
+}
+
+/* ---------- UI ---------- */
+function setStatus(t,s){$('status').textContent=t;$('dot').className='dot '+(s||'')}
+function fillPeers(){
+  const names=Object.keys(D.peers),sel=$('peer');sel.textContent='';
+  for(const n of names){const o=document.createElement('option');o.value=n;o.textContent=n;sel.append(o)}
+  if(!cur||!D.peers[cur])cur=names[0]||null;if(cur)sel.value=cur;sel.hidden=!names.length;
+}
+async function render(){
+  const log=$('log'),p=cur&&D.peers[cur],stick=log.scrollHeight-log.scrollTop-log.clientHeight<80;
+  log.textContent='';
+  if(!p||!p.hist.length){const e=document.createElement('div');e.className='empty';e.textContent=cur?'No messages yet. The first message sets up an encrypted session with '+cur+'.':'Tap New chat and enter a username to start. Messages are encrypted on your device and can’t be read in the repository.';log.append(e)}
+  else{
+    let last='';
+    for(const m of p.hist){
+      const d=new Date(m.ts).toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'});
+      if(d!==last){const x=document.createElement('div');x.className='day';x.textContent=d;log.append(x);last=d}
+      const row=document.createElement('div');row.className='row'+(m.me?' me':'');
+      const b=document.createElement('div');b.className='b'+(m.state==='pending'?' pending':m.state==='fail'?' fail':'')+(m.lock?' lock':'');b.textContent=m.t;
+      const t=document.createElement('div');t.className='t';
+      t.textContent=m.state==='pending'?'Sending':m.state==='fail'?'Not sent. Tap Send to retry.':new Date(m.ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+      row.append(b,t);log.append(row);
+    }
+    if(stick)log.scrollTop=log.scrollHeight;
+  }
+  const s=await safety(p);if(p&&s)$('status').title='Safety number with '+cur;
+  if(s&&$('dot').className.includes('ok'))$('status').textContent='Safety number '+s;
+}
+async function start(c,pass){
+  const restored=await login(c.name,pass,c.repo,c.branch,c.token);
+  etags={};$('setupMsg').textContent='';
+  if(restored){const r=await ghGet('inbox/'+cfg.name+'.json',false);for(const e of(r.data&&r.data.m)||[])peerOf(e.from).seen.push(e.id)} // old messages can’t be decrypted on a new device
+  persist();try{localStorage.setItem('rc3last',cfg.name)}catch(e){}
+  $('setup').hidden=true;$('app').hidden=false;$('fPass').value='';
+  setStatus('Connecting');cur=null;fillPeers();render();
+  clearInterval(timer);await poll();timer=setInterval(poll,4000);
+}
+$('cfgForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const c={name:$('fName').value.trim().toLowerCase(),repo:guessRepo(),branch:'chat-data',token:$('fToken').value.trim()};
+  if(!/^[a-z0-9_-]{2,24}$/.test(c.name)){$('setupMsg').textContent='Use 2 to 24 letters, numbers, - or _ for the username.';return}
+  if(c.repo&&!/^[\w.-]+\/[\w.-]+$/.test(c.repo)){$('setupMsg').textContent='Enter the repository as owner/name.';return}
+  $('setupMsg').textContent='Unlocking…';try{await start(c,$('fPass').value)}catch(err){$('setupMsg').textContent=err.message}
+});
+$('peer').onchange=e=>{cur=e.target.value;render()};
+$('newBtn').onclick=()=>{
+  const n=(prompt('Username to chat with')||'').trim().toLowerCase();
+  if(!/^[a-z0-9_-]{2,24}$/.test(n)||n===cfg.name)return;
+  peerOf(n);cur=n;persist();fillPeers();render();
+};
+$('sendForm').addEventListener('submit',e=>{
+  e.preventDefault();if(!cur)return;
+  const p=D.peers[cur],v=$('text').value.trim(),failed=p.hist.filter(m=>m.state==='fail');
+  if(!v&&failed.length){failed.forEach(m=>{p.hist.splice(p.hist.indexOf(m),1);sendMsg(cur,m.t)});return}
+  if(!v)return;$('text').value='';sendMsg(cur,v);
+});
+$('setBtn').onclick=()=>{clearInterval(timer);pq=pq.then(()=>{K=null;D=null;cfg=null;cur=null});$('fPass').value='';$('fToken').value='';$('setupMsg').textContent='';$('app').hidden=true;$('setup').hidden=false};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll()});
+try{const n=localStorage.getItem('rc3last');if(n)$('fName').value=n}catch(e){}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "RepoChat",
+  "short_name": "RepoChat",
+  "description": "Private chat that runs on GitHub Pages",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef1ec",
+  "theme_color": "#0f6b5c",
+  "icons": [
+    {"src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230f6b5c'/%3E%3Cpath d='M136 176h240a24 24 0 0 1 24 24v112a24 24 0 0 1-24 24H252l-72 56v-56h-44a24 24 0 0 1-24-24V200a24 24 0 0 1 24-24z' fill='white'/%3E%3C/svg%3E", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
+}
